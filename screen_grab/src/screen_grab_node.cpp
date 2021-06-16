@@ -1,3 +1,48 @@
+// /*
+//  * Copyright (c) 2013 Lucas Walter
+//  * November 2013
+//  * All rights reserved.
+//  *
+//  * Redistribution and use in source and binary forms, with or without
+//  * modification, are permitted provided that the following conditions are met:
+//  *
+//  *     * Redistributions of source code must retain the above copyright
+//  *       notice, this list of conditions and the following disclaimer.
+//  *     * Redistributions in binary form must reproduce the above copyright
+//  *       notice, this list of conditions and the following disclaimer in the
+//  *       documentation and/or other materials provided with the distribution.
+//  *     * Neither the name of the Willow Garage, Inc. nor the names of its
+//  *       contributors may be used to endorse or promote products derived from
+//  *       this software without specific prior written permission.
+//  *
+//  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+//  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+//  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+//  * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+//  * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+//  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+//  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+//  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+//  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+//  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+//  * POSSIBILITY OF SUCH DAMAGE.
+//  */
+
+// #include <nodelet/loader.h>
+// #include <ros/ros.h>
+// #include <string>
+
+// int main(int argc, char **argv)
+// {
+//   ros::init(argc, argv, "screen_grab");
+//   nodelet::Loader nodelet;
+//   nodelet::M_string remap(ros::names::getRemappings());
+//   nodelet::V_string nargv;
+//   std::string nodelet_name = ros::this_node::getName();
+//   nodelet.load(nodelet_name, "screen_grab/ScreenGrab", remap, nargv);
+//   ros::spin();
+// }
+
 /*
  * Copyright (c) 2013 Lucas Walter
  * November 2013
@@ -24,19 +69,26 @@
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT 640OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <screen_grab/screen_grab.h>
+#include <dynamic_reconfigure/server.h>
+#include <nodelet/nodelet.h>
+#include <ros/ros.h>
+#include <screen_grab/ScreenGrabConfig.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/RegionOfInterest.h>
 
 // X Server includes
+#include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
 void XImage2RosImage(XImage& ximage, Display& _xDisplay, Screen& _xScreen,
-                     senso640
+                     sensor_msgs::ImagePtr& im)
+{
+  XColor color;
 
   im->header.stamp = ros::Time::now();
 
@@ -50,7 +102,6 @@ void XImage2RosImage(XImage& ximage, Display& _xDisplay, Screen& _xScreen,
     im->width = wd;
     im->height = ht;
     im->step = im->width * 4;
-
     // maybe this could be extracted from X
     im->encoding = sensor_msgs::image_encodings::BGRA8;
     im->data.resize(frame_size);
@@ -73,6 +124,61 @@ void XImage2RosImage(XImage& ximage, Display& _xDisplay, Screen& _xScreen,
   return;
 }
 
+namespace screen_grab
+{
+
+class ScreenGrab : public nodelet::Nodelet
+{
+  // ros::NodeHandle nh_;
+
+  ros::Publisher screen_pub_;
+
+  ros::Subscriber roi_sub_;
+  void roiCallback(const sensor_msgs::RegionOfInterest::ConstPtr& msg);
+
+  double update_rate_;
+
+  typedef dynamic_reconfigure::Server<screen_grab::ScreenGrabConfig> ReconfigureServer;
+  boost::shared_ptr< ReconfigureServer > server_;
+  void callback(screen_grab::ScreenGrabConfig &config,
+                uint32_t level);
+
+  void checkRoi(int& x_offset, int& y_offset, int& width, int& height);
+  void updateConfig();
+
+  int x_offset_;
+  int y_offset_;
+  int width_;
+  int height_;
+
+  int screen_w_;
+  int screen_h_;
+
+  boost::recursive_mutex dr_mutex_;
+
+  void spinOnce(const ros::TimerEvent& e);
+  bool first_error_;
+
+  ros::Timer timer_;
+
+  // X resources
+  Display* display;
+  Screen* screen;
+  XImage* xImageSample;
+  XColor col;
+
+public:
+  virtual void onInit();
+
+  ScreenGrab();
+
+  bool spin();
+};
+}  //  namespace screen_grab
+
+#include <pluginlib/class_list_macros.h>
+
+PLUGINLIB_EXPORT_CLASS(screen_grab::ScreenGrab, nodelet::Nodelet)
 
 namespace screen_grab
 {
@@ -80,8 +186,8 @@ namespace screen_grab
 ScreenGrab::ScreenGrab() :
   x_offset_(0),
   y_offset_(0),
-  width_(1920),
-  height_(1080),
+  width_(640),
+  height_(480),
   first_error_(false)
   // server_(dr_mutex_)  // this locks up
 {
@@ -279,5 +385,15 @@ void ScreenGrab::spinOnce(const ros::TimerEvent& e)
 }
 }  // namespace screen_grab
 
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(screen_grab::ScreenGrab, nodelet::Nodelet)
+#if 0
+int main(int argc, char **argv)
+{
+  ros::init(argc, argv, "screen_grab");
+
+  ScreenGrab screen_grab;
+  screen_grab.spin();
+}
+#endif
+
+
+
